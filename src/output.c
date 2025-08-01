@@ -9,6 +9,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "output.h"
 #include <assert.h>
+#include <drm_fourcc.h>
 #include <strings.h>
 #include <wlr/backend/drm.h>
 #include <wlr/backend/wayland.h>
@@ -38,6 +39,42 @@
 #include "session-lock.h"
 #include "view.h"
 #include "xwayland.h"
+
+static enum render_bit_depth
+bit_depth_from_format(uint32_t render_format) {
+	if (render_format == DRM_FORMAT_XRGB2101010 || render_format == DRM_FORMAT_XBGR2101010) {
+		return LAB_RENDER_BIT_DEPTH_10;
+	} else if (render_format == DRM_FORMAT_XRGB8888 || render_format == DRM_FORMAT_ARGB8888) {
+		return LAB_RENDER_BIT_DEPTH_8;
+	}
+	return LAB_RENDER_BIT_DEPTH_DEFAULT;
+}
+
+static enum render_bit_depth
+get_config_render_bit_depth() {
+	if (rc.hdr == LAB_HDR_ENABLED) {
+		return LAB_RENDER_BIT_DEPTH_10;
+	}
+	return LAB_RENDER_BIT_DEPTH_8;
+}
+
+static void
+output_state_setup_hdr(struct output *output)
+{
+	uint32_t render_format = output->wlr_output->render_format;
+	enum render_bit_depth render_bit_depth = get_config_render_bit_depth();
+	if (render_bit_depth == LAB_RENDER_BIT_DEPTH_10 &&
+		bit_depth_from_format(render_format) == render_bit_depth) {
+		// 10-bit was set successfully before, try to save some tests by reusing the format
+		wlr_output_state_set_render_format(&output->pending, render_format);
+	} else if (render_bit_depth == LAB_RENDER_BIT_DEPTH_10) {
+		wlr_output_state_set_render_format(&output->pending, DRM_FORMAT_XRGB2101010);
+	} else {
+		wlr_output_state_set_render_format(&output->pending, DRM_FORMAT_XRGB8888);
+	}
+	bool hdr = rc.hdr == LAB_HDR_ENABLED;
+	output_enable_hdr(output, &output->pending, hdr);
+}
 
 bool
 output_get_tearing_allowance(struct output *output)
@@ -400,6 +437,8 @@ configure_new_output(struct server *server, struct output *output)
 		output_enable_adaptive_sync(output, true);
 	}
 
+	output_state_setup_hdr(output);
+
 	output_state_commit(output);
 
 	wlr_output_effective_resolution(wlr_output,
@@ -647,6 +686,7 @@ output_config_apply(struct server *server,
 			wlr_output_state_set_transform(os, head->state.transform);
 			output_enable_adaptive_sync(output,
 				head->state.adaptive_sync_enabled);
+			output_state_setup_hdr(output);
 		}
 		if (!output_state_commit(output)) {
 			/*
@@ -1138,6 +1178,43 @@ output_enable_adaptive_sync(struct output *output, bool enabled)
 		wlr_log(WLR_INFO, "adaptive sync %sabled for output %s",
 			enabled ? "en" : "dis", output->wlr_output->name);
 	}
+}
+
+void
+output_enable_hdr(struct output *output, struct wlr_output_state *os, bool enabled)
+{
+	enum wlr_color_named_primaries primaries = WLR_COLOR_NAMED_PRIMARIES_BT2020;
+	enum wlr_color_transfer_function tf = WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ;
+	if (enabled && !(output->wlr_output->supported_primaries & primaries)) {
+		wlr_log(WLR_INFO, "Cannot enable HDR on output %s: BT2020 primaries not supported by output",
+			output->wlr_output->name);
+		enabled = false;
+	}
+	if (enabled && !(output->wlr_output->supported_transfer_functions & tf)) {
+		wlr_log(WLR_INFO, "Cannot enable HDR on output %s: PQ transfer function not supported by output",
+			output->wlr_output->name);
+		enabled = false;
+	}
+	if (enabled && !output->server->renderer->features.output_color_transform) {
+		wlr_log(WLR_INFO, "Cannot enable HDR on output %s: renderer doesn't support color transforms",
+			output->wlr_output->name);
+		enabled = false;
+	}
+	if (!enabled) {
+		if (output->wlr_output->supported_primaries != 0 ||
+			output->wlr_output->supported_transfer_functions != 0) {
+			wlr_log(WLR_DEBUG, "Disabling HDR on output %s", output->wlr_output->name);
+			wlr_output_state_set_image_description(os, NULL);
+		}
+		return;
+	}
+
+	wlr_log(WLR_DEBUG, "Enabling HDR on output %s", output->wlr_output->name);
+	const struct wlr_output_image_description image_desc = {
+		.primaries = primaries,
+		.transfer_function = tf,
+	};
+	wlr_output_state_set_image_description(os, &image_desc);
 }
 
 float

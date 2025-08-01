@@ -1036,6 +1036,16 @@ set_tearing_mode(const char *str, enum tearing_mode *variable)
 	}
 }
 
+static void
+set_hdr_mode(const char *str, enum hdr_mode *variable)
+{
+	if (parse_bool(str, -1) == 1) {
+		*variable = LAB_HDR_ENABLED;
+	} else {
+		*variable = LAB_HDR_DISABLED;
+	}
+}
+
 /* Returns true if the node's children should also be traversed */
 static bool
 entry(xmlNode *node, char *nodename, char *content)
@@ -1097,6 +1107,8 @@ entry(xmlNode *node, char *nodename, char *content)
 		set_adaptive_sync_mode(content, &rc.adaptive_sync);
 	} else if (!strcasecmp(nodename, "allowTearing.core")) {
 		set_tearing_mode(content, &rc.allow_tearing);
+	} else if (!strcasecmp(nodename, "Hdr.core")) {
+		set_hdr_mode(content, &rc.hdr);
 	} else if (!strcasecmp(nodename, "autoEnableOutputs.core")) {
 		set_bool(content, &rc.auto_enable_outputs);
 	} else if (!strcasecmp(nodename, "reuseOutputMode.core")) {
@@ -1375,6 +1387,7 @@ rcxml_init(void)
 	rc.gap = 0;
 	rc.adaptive_sync = LAB_ADAPTIVE_SYNC_DISABLED;
 	rc.allow_tearing = LAB_TEARING_DISABLED;
+	rc.hdr = LAB_HDR_DISABLED;
 	rc.auto_enable_outputs = true;
 	rc.reuse_output_mode = false;
 	rc.xwayland_persistence = false;
