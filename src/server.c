@@ -8,6 +8,7 @@
 #include <wlr/backend/multi.h>
 #include <wlr/render/allocator.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
+#include <wlr/types/wlr_color_management_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_drm.h>
@@ -702,6 +703,33 @@ server_init(struct server *server)
 	wl_signal_add(&server->tearing_control->events.new_object, &server->tearing_new_object);
 
 	server->tablet_manager = wlr_tablet_v2_create(server->wl_display);
+
+	if (server->renderer->features.input_color_transform) {
+		const enum wp_color_manager_v1_render_intent render_intents[] = {
+			WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL,
+		};
+		const enum wp_color_manager_v1_transfer_function transfer_functions[] = {
+			WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB,
+			WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ,
+			WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR,
+		};
+		const enum wp_color_manager_v1_primaries primaries[] = {
+			WP_COLOR_MANAGER_V1_PRIMARIES_SRGB,
+			WP_COLOR_MANAGER_V1_PRIMARIES_BT2020,
+		};
+		wlr_color_manager_v1_create(server->wl_display, 1, &(struct wlr_color_manager_v1_options){
+			.features = {
+				.parametric = true,
+				.set_mastering_display_primaries = true,
+			},
+			.render_intents = render_intents,
+			.render_intents_len = sizeof(render_intents) / sizeof(render_intents[0]),
+			.transfer_functions = transfer_functions,
+			.transfer_functions_len = sizeof(transfer_functions) / sizeof(transfer_functions[0]),
+			.primaries = primaries,
+			.primaries_len = sizeof(primaries) / sizeof(primaries[0]),
+		});
+	}
 
 	layers_init(server);
 
