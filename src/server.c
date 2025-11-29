@@ -10,6 +10,7 @@
 #include <wlr/render/allocator.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_color_management_v1.h>
+#include <wlr/types/wlr_color_representation_v1.h>
 #include <wlr/types/wlr_data_control_v1.h>
 #include <wlr/types/wlr_data_device.h>
 #include <wlr/types/wlr_drm.h>
@@ -762,6 +763,9 @@ server_init(void)
 			wlr_scene_set_color_manager_v1(server.scene, cm);
 		}
 	}
+
+	wlr_color_representation_manager_v1_create_with_renderer(
+		server.wl_display, 1, server.renderer);
 
 	layers_init();
 
